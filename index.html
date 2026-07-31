@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hydro Break — a little pomodoro garden</title>
-<link rel="icon" type="image/x-icon" href="favicon.png">
+<link rel="icon" type="image/x-icon" href="favicon.png">  
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -794,6 +794,7 @@
     running: false,
     podIndex: 0,        // which pod (0-based) is currently growing
     secondsLeft: FOCUS_MIN_PER_POD * 60,
+    targetTime: null,   // wall-clock timestamp the current countdown ends at
     totalPodsGrownToday: 0
   };
   let tickHandle = null;
@@ -946,15 +947,18 @@
         state.podIndex++;
         state.phase='focus';
         state.secondsLeft = FOCUS_MIN_PER_POD*60;
+        state.targetTime = Date.now() + state.secondsLeft*1000;
         notify('Pod ready 🌱', 'One hydro pod is grown — next one is sprouting.');
       } else {
         state.phase='break';
         state.secondsLeft = settings.breakMin*60;
+        state.targetTime = Date.now() + state.secondsLeft*1000;
         notify('Time to stretch 🌿', 'Your hydro garden is grown. Breathe, stretch, sip some water.');
       }
     } else if(state.phase==='break'){
       state.phase='harvestready';
       state.running = false;
+      state.targetTime = null;
       clearInterval(tickHandle);
       notify('Ready to harvest 🍅', 'Confirm the harvest whenever you\'re ready.');
     }
@@ -962,11 +966,13 @@
   }
 
   function tick(){
+    if(!state.targetTime) return;
+    const remaining = Math.round((state.targetTime - Date.now())/1000);
+    state.secondsLeft = Math.max(0, remaining);
     if(state.secondsLeft <= 0){
       advancePhase();
       return;
     }
-    state.secondsLeft--;
     render();
   }
 
@@ -974,11 +980,13 @@
     if(state.running) return;
     requestNotifyPermission();
     state.running = true;
+    state.targetTime = Date.now() + state.secondsLeft*1000;
     tickHandle = setInterval(tick, 1000);
     render();
   }
   function pause(){
     state.running = false;
+    state.targetTime = null;
     clearInterval(tickHandle);
     render();
   }
@@ -990,6 +998,17 @@
     buildPods();
     render();
   }
+
+  // catch up instantly the moment the tab becomes visible again,
+  // instead of waiting for the throttled interval to fire
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden && state.running){
+      tick();
+    }
+  });
+  window.addEventListener('focus', ()=>{
+    if(state.running) tick();
+  });
 
   startBtn.addEventListener('click', ()=>{
     state.running ? pause() : start();
